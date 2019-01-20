@@ -27,8 +27,16 @@ RUN set -x \
 	&& apt-get update && apt-get install -y --no-install-recommends ca-certificates wget && rm -rf /var/lib/apt/lists/* \
 	&& wget -O /usr/local/bin/gosu "https://github.com/tianon/gosu/releases/download/$GOSU_VERSION/gosu-$(dpkg --print-architecture)" \
 	&& wget -O /usr/local/bin/gosu.asc "https://github.com/tianon/gosu/releases/download/$GOSU_VERSION/gosu-$(dpkg --print-architecture).asc" \
+	&& key='B42F6819007F00F88E364FD4036A9C25BF357DD4' \
 	&& export GNUPGHOME="$(mktemp -d)" \
-	&& gpg --batch --keyserver ha.pool.sks-keyservers.net --recv-keys B42F6819007F00F88E364FD4036A9C25BF357DD4 \
+  && for server in  ha.pool.sks-keyservers.net \
+                	  hkp://p80.pool.sks-keyservers.net:80 \
+                	  keyserver.ubuntu.com \
+                	  hkp://keyserver.ubuntu.com:80 \
+                	  pgp.mit.edu; \
+  do \
+    gpg --batch --keyserver "$server" --recv-keys "$key" && break || echo "Trying new server..."; \
+  done \
 	&& gpg --batch --verify /usr/local/bin/gosu.asc /usr/local/bin/gosu \
 	&& { command -v gpgconf > /dev/null && gpgconf --kill all || :; } \
 	&& rm -rf "$GNUPGHOME" /usr/local/bin/gosu.asc \
@@ -64,7 +72,14 @@ RUN set -ex; \
 # uid                  PostgreSQL Debian Repository
 	key='B97B0AFCAA1A47F044F244A07FCC7D46ACCC4CF8'; \
 	export GNUPGHOME="$(mktemp -d)"; \
-	gpg --batch --keyserver ha.pool.sks-keyservers.net --recv-keys "$key"; \
+  for server in ha.pool.sks-keyservers.net \
+                hkp://p80.pool.sks-keyservers.net:80 \
+                keyserver.ubuntu.com \
+                hkp://keyserver.ubuntu.com:80 \
+                pgp.mit.edu; \
+  do \
+    gpg --batch --keyserver "$server" --recv-keys "$key" && break || echo "Trying new server..."; \
+  done; \
 	gpg --batch --export "$key" > /etc/apt/trusted.gpg.d/postgres.gpg; \
 	command -v gpgconf > /dev/null && gpgconf --kill all; \
 	rm -rf "$GNUPGHOME"; \
@@ -80,51 +95,51 @@ RUN set -ex; \
 	\
 # we're on an architecture upstream doesn't officially build for
 # let's build binaries from their published source packages
-			echo "deb-src http://apt.postgresql.org/pub/repos/apt/ trusty-pgdg main $PG_MAJOR" > /etc/apt/sources.list.d/pgdg.list; \
-			\
-			case "$PG_MAJOR" in \
-				9.* | 10 ) ;; \
-				*) \
+		echo "deb-src http://apt.postgresql.org/pub/repos/apt/ trusty-pgdg main $PG_MAJOR" > /etc/apt/sources.list.d/pgdg.list; \
+		\
+		case "$PG_MAJOR" in \
+			9.* | 10 ) ;; \
+			*) \
 # https://github.com/docker-library/postgres/issues/484 (clang-6.0 required, only available in stretch-backports)
 # TODO remove this once we hit buster+
-					echo 'deb http://deb.debian.org/debian stretch-backports main' >> /etc/apt/sources.list.d/pgdg.list; \
-					;; \
-			esac; \
-			\
-			tempDir="$(mktemp -d)"; \
-			cd "$tempDir"; \
-			\
-			savedAptMark="$(apt-mark showmanual)"; \
-			\
+				echo 'deb http://deb.debian.org/debian stretch-backports main' >> /etc/apt/sources.list.d/pgdg.list; \
+				;; \
+		esac; \
+		\
+		tempDir="$(mktemp -d)"; \
+		cd "$tempDir"; \
+		\
+		savedAptMark="$(apt-mark showmanual)"; \
+		\
 # build .deb files from upstream's source packages (which are verified by apt-get)
-			apt-get update; \
-			apt-get build-dep -y \
+		apt-get update; \
+		apt-get build-dep -y \
+			postgresql-common pgdg-keyring \
+			"postgresql-$PG_MAJOR=$PG_VERSION" \
+		; \
+		DEB_BUILD_OPTIONS="nocheck parallel=$(nproc)" \
+			apt-get source --compile \
 				postgresql-common pgdg-keyring \
 				"postgresql-$PG_MAJOR=$PG_VERSION" \
-			; \
-			DEB_BUILD_OPTIONS="nocheck parallel=$(nproc)" \
-				apt-get source --compile \
-					postgresql-common pgdg-keyring \
-					"postgresql-$PG_MAJOR=$PG_VERSION" \
-			; \
+		; \
 # we don't remove APT lists here because they get re-downloaded and removed later
-			\
+		\
 # reset apt-mark's "manual" list so that "purge --auto-remove" will remove all build dependencies
 # (which is done after we install the built packages so we don't have to redownload any overlapping dependencies)
-			apt-mark showmanual | xargs apt-mark auto > /dev/null; \
-			apt-mark manual $savedAptMark; \
-			\
+		apt-mark showmanual | xargs apt-mark auto > /dev/null; \
+		apt-mark manual $savedAptMark; \
+		\
 # create a temporary local APT repo to install from (so that dependency resolution can be handled by APT, as it should be)
-			ls -lAFh; \
-			dpkg-scanpackages . > Packages; \
-			grep '^Package: ' Packages; \
-			echo "deb [ trusted=yes ] file://$tempDir ./" > /etc/apt/sources.list.d/temp.list; \
+		ls -lAFh; \
+		dpkg-scanpackages . > Packages; \
+		grep '^Package: ' Packages; \
+		echo "deb [ trusted=yes ] file://$tempDir ./" > /etc/apt/sources.list.d/temp.list; \
 # work around the following APT issue by using "Acquire::GzipIndexes=false" (overriding "/etc/apt/apt.conf.d/docker-gzip-indexes")
 #   Could not open file /var/lib/apt/lists/partial/_tmp_tmp.ODWljpQfkE_._Packages - open (13: Permission denied)
 #   ...
 #   E: Failed to fetch store:/var/lib/apt/lists/partial/_tmp_tmp.ODWljpQfkE_._Packages  Could not open file /var/lib/apt/lists/partial/_tmp_tmp.ODWljpQfkE_._Packages - open (13: Permission denied)
-			apt-get -o Acquire::GzipIndexes=false update; \
-			;; \
+		apt-get -o Acquire::GzipIndexes=false update; \
+		;; \
 	\
 	apt-get install -y postgresql-common; \
 	sed -ri 's/#(create_main_cluster) .*$/\1 = false/' /etc/postgresql-common/createcluster.conf; \
