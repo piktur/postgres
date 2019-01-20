@@ -71,24 +71,16 @@ RUN set -ex; \
 	apt-key list
 
 ENV PG_MAJOR 9.4
-ENV PG_VERSION 9.4.20-1.pgdg90+1
+ARG PG_VERSION=9.4.20-1.pgdg14.04+1
 
 RUN set -ex; \
 	\
 # see note below about "*.pyc" files
 	export PYTHONDONTWRITEBYTECODE=1; \
 	\
-	dpkgArch="$(dpkg --print-architecture)"; \
-	case "$dpkgArch" in \
-		amd64|i386|ppc64el) \
-# arches officialy built by upstream
-			echo "deb http://apt.postgresql.org/pub/repos/apt/ stretch-pgdg main $PG_MAJOR" > /etc/apt/sources.list.d/pgdg.list; \
-			apt-get update; \
-			;; \
-		*) \
 # we're on an architecture upstream doesn't officially build for
 # let's build binaries from their published source packages
-			echo "deb-src http://apt.postgresql.org/pub/repos/apt/ stretch-pgdg main $PG_MAJOR" > /etc/apt/sources.list.d/pgdg.list; \
+			echo "deb-src http://apt.postgresql.org/pub/repos/apt/ trusty-pgdg main $PG_MAJOR" > /etc/apt/sources.list.d/pgdg.list; \
 			\
 			case "$PG_MAJOR" in \
 				9.* | 10 ) ;; \
@@ -133,7 +125,6 @@ RUN set -ex; \
 #   E: Failed to fetch store:/var/lib/apt/lists/partial/_tmp_tmp.ODWljpQfkE_._Packages  Could not open file /var/lib/apt/lists/partial/_tmp_tmp.ODWljpQfkE_._Packages - open (13: Permission denied)
 			apt-get -o Acquire::GzipIndexes=false update; \
 			;; \
-	esac; \
 	\
 	apt-get install -y postgresql-common; \
 	sed -ri 's/#(create_main_cluster) .*$/\1 = false/' /etc/postgresql-common/createcluster.conf; \
