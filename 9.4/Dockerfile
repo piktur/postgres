@@ -161,7 +161,8 @@ VOLUME /var/lib/postgresql/data
 
 COPY docker-entrypoint.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh \
-    && ln -s /usr/local/bin/docker-entrypoint.sh /
+    && ln -s /usr/local/bin/docker-entrypoint.sh / \
+		&& mkdir -p /tmp/postgres
 
 ENTRYPOINT ["docker-entrypoint.sh"]
 
